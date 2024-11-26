@@ -56,10 +56,10 @@ deps:
 
 # Database migrations
 migrate-up:
-	@echo "Database migrations will be implemented in a separate PR"
+	go run cmd/migrate/main.go -direction up -db "${DATABASE_URL:-postgres://postgres:postgres@localhost:5432/passwordimmunity?sslmode=disable}"
 
 migrate-down:
-	@echo "Database migrations will be implemented in a separate PR"
+	go run cmd/migrate/main.go -direction down -db "${DATABASE_URL:-postgres://postgres:postgres@localhost:5432/passwordimmunity?sslmode=disable}"
 
 # Help target
 help:
