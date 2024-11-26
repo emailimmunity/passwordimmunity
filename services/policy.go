@@ -109,13 +109,124 @@ func (s *policyService) EvaluatePolicy(ctx context.Context, orgID uuid.UUID, pol
 }
 
 func (s *policyService) evaluateTwoFactorAuthPolicy(policy *Policy, data interface{}) (bool, error) {
-	// TODO: Implement 2FA policy evaluation
-	return true, nil
+	var settings struct {
+		Required    bool     `json:"required"`
+		AllowedMethods []string `json:"allowed_methods"`
+	}
+	if err := json.Unmarshal(policy.Settings, &settings); err != nil {
+		return false, err
+	}
+
+	userData, ok := data.(map[string]interface{})
+	if !ok {
+		return false, errors.New("invalid data format for 2FA policy evaluation")
+	}
+
+	if !settings.Required {
+		return true, nil
+	}
+
+	method, ok := userData["method"].(string)
+	if !ok || method == "" {
+		return false, nil
+	}
+
+	for _, allowed := range settings.AllowedMethods {
+		if method == allowed {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (s *policyService) evaluatePasswordComplexityPolicy(policy *Policy, data interface{}) (bool, error) {
-	// TODO: Implement password complexity policy evaluation
-	return true, nil
+	var settings struct {
+		MinLength      int  `json:"min_length"`
+		RequireUpper   bool `json:"require_upper"`
+		RequireLower   bool `json:"require_lower"`
+		RequireNumbers bool `json:"require_numbers"`
+		RequireSpecial bool `json:"require_special"`
+	}
+	if err := json.Unmarshal(policy.Settings, &settings); err != nil {
+		return false, err
+	}
+
+	password, ok := data.(string)
+	if !ok {
+		return false, errors.New("invalid data format for password complexity evaluation")
+	}
+
+	if len(password) < settings.MinLength {
+		return false, nil
+	}
+
+	hasUpper := false
+	hasLower := false
+	hasNumber := false
+	hasSpecial := false
+
+	for _, char := range password {
+		switch {
+		case unicode.IsUpper(char):
+			hasUpper = true
+		case unicode.IsLower(char):
+			hasLower = true
+		case unicode.IsNumber(char):
+			hasNumber = true
+		case unicode.IsPunct(char) || unicode.IsSymbol(char):
+			hasSpecial = true
+		}
+	}
+
+	return (!settings.RequireUpper || hasUpper) &&
+		(!settings.RequireLower || hasLower) &&
+		(!settings.RequireNumbers || hasNumber) &&
+		(!settings.RequireSpecial || hasSpecial), nil
+}
+
+func (s *policyService) evaluatePasswordComplexityPolicy(policy *Policy, data interface{}) (bool, error) {
+	var settings struct {
+		MinLength      int  `json:"min_length"`
+		RequireUpper   bool `json:"require_upper"`
+		RequireLower   bool `json:"require_lower"`
+		RequireNumbers bool `json:"require_numbers"`
+		RequireSpecial bool `json:"require_special"`
+	}
+	if err := json.Unmarshal(policy.Settings, &settings); err != nil {
+		return false, err
+	}
+
+	password, ok := data.(string)
+	if !ok {
+		return false, errors.New("invalid data format for password complexity evaluation")
+	}
+
+	if len(password) < settings.MinLength {
+		return false, nil
+	}
+
+	hasUpper := false
+	hasLower := false
+	hasNumber := false
+	hasSpecial := false
+
+	for _, char := range password {
+		switch {
+		case unicode.IsUpper(char):
+			hasUpper = true
+		case unicode.IsLower(char):
+			hasLower = true
+		case unicode.IsNumber(char):
+			hasNumber = true
+		case unicode.IsPunct(char) || unicode.IsSymbol(char):
+			hasSpecial = true
+		}
+	}
+
+	return (!settings.RequireUpper || hasUpper) &&
+		(!settings.RequireLower || hasLower) &&
+		(!settings.RequireNumbers || hasNumber) &&
+		(!settings.RequireSpecial || hasSpecial), nil
 }
 
 func (s *policyService) evaluateSessionTimeoutPolicy(policy *Policy, data interface{}) (bool, error) {

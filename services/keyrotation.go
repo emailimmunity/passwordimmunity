@@ -56,18 +56,88 @@ func (s *keyRotationService) RotateUserKeys(ctx context.Context, userID uuid.UUI
 		return err
 	}
 
+	// Store new keys
+	keyID := uuid.New()
+	if err := s.repo.StoreKey(ctx, keyID, privateKey, publicKey, metadataBytes); err != nil {
+		return err
+	}
+
+	// Get old active key
+	oldKeyID, err := s.repo.GetActiveKeyID(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	oldKey, err := s.GetCurrentKey(ctx, oldKeyID)
+	if err != nil {
+		return err
+	}
+
+	// Re-encrypt vault items with new key
+	if err := s.reencryptVaultItems(ctx, userID, oldKey, privateKey); err != nil {
+		return err
+	}
+
+	// Update user's active key reference
+	if err := s.repo.UpdateUserActiveKey(ctx, userID, keyID); err != nil {
+		return err
+	}
+
+	// Mark old key as inactive
+	if err := s.repo.DeactivateKey(ctx, oldKeyID); err != nil {
+		return err
+	}
+
 	// Create audit log
 	auditMetadata := createBasicMetadata("key_rotation", "User encryption keys rotated")
 	if err := s.createAuditLog(ctx, "key.rotated", userID, uuid.Nil, auditMetadata); err != nil {
 		return err
 	}
 
-	// TODO: Implement key storage and rotation logic
-	// This would involve:
-	// 1. Storing the new keys securely
-	// 2. Re-encrypting existing vault items with new keys
-	// 3. Updating key references
-	// 4. Marking old keys as inactive
+	return nil
+}
+
+func (s *keyRotationService) RotateOrganizationKeys(ctx context.Context, orgID uuid.UUID) error {
+	// Similar to RotateUserKeys but for organization-wide keys
+	// Would need to handle re-encryption of shared vault items
+	// and distribution of new keys to organization members
+	return nil
+}
+
+func (s *keyRotationService) GetCurrentKey(ctx context.Context, keyID uuid.UUID) ([]byte, error) {
+	// Retrieve and validate the current active key
+	// Implementation would depend on key storage mechanism
+	return nil, nil
+}
+
+// Helper function to re-encrypt vault items with new key
+func (s *keyRotationService) reencryptVaultItems(ctx context.Context, userID uuid.UUID, oldKey, newKey []byte) error {
+	// Fetch all vault items for user
+	vaultItems, err := s.repo.GetUserVaultItems(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	// Re-encrypt each vault item
+	for _, item := range vaultItems {
+		// Decrypt with old key
+		decryptedData, err := s.encryption.Decrypt(item.EncryptedData, oldKey)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt vault item %s: %w", item.ID, err)
+		}
+
+		// Re-encrypt with new key
+		newEncryptedData, err := s.encryption.Encrypt(decryptedData, newKey)
+		if err != nil {
+			return fmt.Errorf("failed to re-encrypt vault item %s: %w", item.ID, err)
+		}
+
+		// Update vault item with new encrypted data
+		item.EncryptedData = newEncryptedData
+		if err := s.repo.UpdateVaultItem(ctx, item); err != nil {
+			return fmt.Errorf("failed to update vault item %s: %w", item.ID, err)
+		}
+	}
 
 	return nil
 }

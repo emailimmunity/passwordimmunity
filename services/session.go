@@ -58,12 +58,201 @@ func (s *sessionService) CreateSession(ctx context.Context, userID uuid.UUID, de
 }
 
 func (s *sessionService) ValidateSession(ctx context.Context, sessionID string) (*models.Session, error) {
-	// TODO: Implement session validation
-	// 1. Retrieve session from storage
-	// 2. Check if expired
-	// 3. Update last used timestamp
-	// 4. Return session if valid
-	return nil, nil
+	session, err := s.repo.GetSessionByToken(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	if session == nil {
+		return nil, ErrSessionNotFound
+	}
+
+	// Check if session is expired
+	if time.Now().After(session.ExpiresAt) {
+		return nil, ErrSessionExpired
+	}
+
+	// Update last used timestamp
+	session.LastUsed = time.Now()
+	if err := s.repo.UpdateSession(ctx, session); err != nil {
+		return nil, err
+	}
+
+	// Create audit log for session validation
+	metadata := createBasicMetadata("session_validated", "Session validated successfully")
+	metadata["device_info"] = session.DeviceInfo
+	if err := s.createAuditLog(ctx, AuditEventSessionValidated, session.UserID, uuid.Nil, metadata); err != nil {
+		return nil, err
+	}
+
+	return session, nil
+}
+
+func (s *sessionService) RevokeSession(ctx context.Context, sessionID string) error {
+	session, err := s.repo.GetSessionByToken(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+
+	if session == nil {
+		return ErrSessionNotFound
+	}
+
+	// Mark session as revoked
+	session.RevokedAt = time.Now()
+	if err := s.repo.UpdateSession(ctx, session); err != nil {
+		return err
+	}
+
+	// Create audit log for session revocation
+	metadata := createBasicMetadata("session_revoked", "Session revoked")
+	metadata["device_info"] = session.DeviceInfo
+	if err := s.createAuditLog(ctx, AuditEventSessionRevoked, session.UserID, uuid.Nil, metadata); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *sessionService) RevokeAllUserSessions(ctx context.Context, userID uuid.UUID) error {
+	sessions, err := s.repo.GetUserSessions(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	revokedAt := time.Now()
+	for _, session := range sessions {
+		session.RevokedAt = revokedAt
+		if err := s.repo.UpdateSession(ctx, session); err != nil {
+			return err
+		}
+	}
+
+	// Create audit log for bulk session revocation
+	metadata := createBasicMetadata("all_sessions_revoked", "All user sessions revoked")
+	metadata["session_count"] = len(sessions)
+	if err := s.createAuditLog(ctx, AuditEventAllSessionsRevoked, userID, uuid.Nil, metadata); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *sessionService) cleanupExpiredSessions(ctx context.Context) error {
+	deletedCount, err := s.repo.DeleteExpiredSessions(ctx, time.Now())
+	if err != nil {
+		return err
+	}
+
+	if deletedCount > 0 {
+		// Create audit log for session cleanup
+		metadata := createBasicMetadata("sessions_cleaned", "Expired sessions cleaned up")
+		metadata["deleted_count"] = deletedCount
+		if err := s.createAuditLog(ctx, AuditEventSessionsCleanup, uuid.Nil, uuid.Nil, metadata); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *sessionService) RevokeSession(ctx context.Context, sessionID string) error {
+	session, err := s.repo.GetSessionByToken(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+
+	if session == nil {
+		return ErrSessionNotFound
+	}
+
+	// Mark session as revoked
+	session.RevokedAt = time.Now()
+	if err := s.repo.UpdateSession(ctx, session); err != nil {
+		return err
+	}
+
+	// Create audit log for session revocation
+	metadata := createBasicMetadata("session_revoked", "Session revoked")
+	metadata["device_info"] = session.DeviceInfo
+	if err := s.createAuditLog(ctx, AuditEventSessionRevoked, session.UserID, uuid.Nil, metadata); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *sessionService) RevokeAllUserSessions(ctx context.Context, userID uuid.UUID) error {
+	sessions, err := s.repo.GetUserSessions(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	revokedAt := time.Now()
+	for _, session := range sessions {
+		session.RevokedAt = revokedAt
+		if err := s.repo.UpdateSession(ctx, session); err != nil {
+			return err
+		}
+	}
+
+	// Create audit log for bulk session revocation
+	metadata := createBasicMetadata("all_sessions_revoked", "All user sessions revoked")
+	metadata["session_count"] = len(sessions)
+	if err := s.createAuditLog(ctx, AuditEventAllSessionsRevoked, userID, uuid.Nil, metadata); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Helper function to clean up expired sessions
+func (s *sessionService) cleanupExpiredSessions(ctx context.Context) error {
+	// TODO: Implement session cleanup
+	// 1. Delete expired sessions
+	// 2. Create audit logs
+	return nil
+}
+
+func (s *sessionService) RevokeSession(ctx context.Context, sessionID string) error {
+	session, err := s.repo.GetSessionByToken(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+
+	if session == nil {
+		return ErrSessionNotFound
+	}
+
+	// Mark session as revoked
+	session.RevokedAt = time.Now()
+	if err := s.repo.UpdateSession(ctx, session); err != nil {
+		return err
+	}
+
+	// Create audit log for session revocation
+	metadata := createBasicMetadata("session_revoked", "Session revoked")
+	metadata["device_info"] = session.DeviceInfo
+	if err := s.createAuditLog(ctx, AuditEventSessionRevoked, session.UserID, uuid.Nil, metadata); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *sessionService) RevokeAllUserSessions(ctx context.Context, userID uuid.UUID) error {
+	// TODO: Implement bulk session revocation
+	// 1. Mark all user sessions as revoked
+	// 2. Create audit log
+	return nil
+}
+
+// Helper function to clean up expired sessions
+func (s *sessionService) cleanupExpiredSessions(ctx context.Context) error {
+	// TODO: Implement session cleanup
+	// 1. Delete expired sessions
+	// 2. Create audit logs
+	return nil
 }
 
 func (s *sessionService) RevokeSession(ctx context.Context, sessionID string) error {

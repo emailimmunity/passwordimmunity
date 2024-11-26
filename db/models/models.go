@@ -75,6 +75,53 @@ type AuditLog struct {
 	Details        []byte `gorm:"type:jsonb"`
 }
 
+// Payment represents a payment transaction
+type Payment struct {
+    Base
+    OrganizationID uuid.UUID
+    Organization   Organization
+    ProviderID     string    `gorm:"uniqueIndex"`
+    Amount         string
+    Currency       string
+    Status         string
+    LicenseType    string
+    Period         string
+    PaidAt         time.Time
+}
+
+// License represents an organization's license information
+type License struct {
+    Base
+    OrganizationID uuid.UUID
+    Organization   Organization
+    Type           string    // "free", "premium", "enterprise"
+    Status         string    // "active", "expired", "cancelled"
+    ExpiresAt      time.Time
+    Features       []string  `gorm:"type:text[]"`
+    PaymentID      uuid.UUID
+    Payment        Payment
+}
+
+// FeatureFlag represents a configurable feature flag
+type FeatureFlag struct {
+	Base
+	Name        string            `gorm:"uniqueIndex;not null"`
+	Enabled     bool              `gorm:"default:false"`
+	Options     FeatureFlagOptions `gorm:"type:jsonb"`
+	Description string
+}
+
+// FeatureFlagOptions contains configuration options for feature flags
+type FeatureFlagOptions struct {
+	RequiresEnterprise bool        `json:"requires_enterprise"`
+	RequiresPremium    bool        `json:"requires_premium"`
+	AllowedOrgs        []uuid.UUID `json:"allowed_orgs"`
+	RolloutPercentage  float64     `json:"rollout_percentage"`
+	StartsAt           time.Time    `json:"starts_at"`
+	ExpiresAt          time.Time    `json:"expires_at"`
+	Description        string       `json:"description"`
+}
+
 // BeforeCreate is called before creating a record
 func (base *Base) BeforeCreate(tx *gorm.DB) error {
 	if base.ID == uuid.Nil {

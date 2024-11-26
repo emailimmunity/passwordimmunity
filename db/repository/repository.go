@@ -39,6 +39,21 @@ type Repository interface {
 	// Audit operations
 	CreateAuditLog(ctx context.Context, log *models.AuditLog) error
 	GetAuditLogs(ctx context.Context, userID, orgID uuid.UUID, limit, offset int) ([]models.AuditLog, error)
+
+	// Payment operations
+	CreatePayment(ctx context.Context, payment *models.Payment) error
+	GetPaymentByID(ctx context.Context, id uuid.UUID) (*models.Payment, error)
+	GetPaymentByProviderID(ctx context.Context, providerID string) (*models.Payment, error)
+	UpdatePayment(ctx context.Context, payment *models.Payment) error
+	GetPaymentsByOrganization(ctx context.Context, orgID uuid.UUID) ([]models.Payment, error)
+
+	// License operations
+	CreateLicense(ctx context.Context, license *models.License) error
+	GetLicenseByID(ctx context.Context, id uuid.UUID) (*models.License, error)
+	GetActiveLicenseByOrganization(ctx context.Context, orgID uuid.UUID) (*models.License, error)
+	UpdateLicense(ctx context.Context, license *models.License) error
+	GetExpiredLicenses(ctx context.Context) ([]models.License, error)
+	DeactivateOrganizationLicenses(ctx context.Context, orgID uuid.UUID) error
 }
 
 type repository struct {
@@ -182,4 +197,96 @@ func (r *repository) GetAuditLogs(ctx context.Context, userID, orgID uuid.UUID, 
 		return nil, err
 	}
 	return logs, nil
+}
+
+// Payment operations
+func (r *repository) CreatePayment(ctx context.Context, payment *models.Payment) error {
+    return r.db.WithContext(ctx).Create(payment).Error
+}
+
+func (r *repository) GetPaymentByID(ctx context.Context, id uuid.UUID) (*models.Payment, error) {
+    var payment models.Payment
+    if err := r.db.WithContext(ctx).First(&payment, id).Error; err != nil {
+        if errors.Is(err, gorm.ErrRecordNotFound) {
+            return nil, nil
+        }
+        return nil, err
+    }
+    return &payment, nil
+}
+
+func (r *repository) GetPaymentByProviderID(ctx context.Context, providerID string) (*models.Payment, error) {
+    var payment models.Payment
+    if err := r.db.WithContext(ctx).Where("provider_id = ?", providerID).First(&payment).Error; err != nil {
+        if errors.Is(err, gorm.ErrRecordNotFound) {
+            return nil, nil
+        }
+        return nil, err
+    }
+    return &payment, nil
+}
+
+func (r *repository) UpdatePayment(ctx context.Context, payment *models.Payment) error {
+    return r.db.WithContext(ctx).Save(payment).Error
+}
+
+func (r *repository) GetPaymentsByOrganization(ctx context.Context, orgID uuid.UUID) ([]models.Payment, error) {
+    var payments []models.Payment
+    if err := r.db.WithContext(ctx).Where("organization_id = ?", orgID).Find(&payments).Error; err != nil {
+        return nil, err
+    }
+    return payments, nil
+}
+
+// License operations
+func (r *repository) CreateLicense(ctx context.Context, license *models.License) error {
+    return r.db.WithContext(ctx).Create(license).Error
+}
+
+func (r *repository) GetLicenseByID(ctx context.Context, id uuid.UUID) (*models.License, error) {
+    var license models.License
+    if err := r.db.WithContext(ctx).First(&license, id).Error; err != nil {
+        if errors.Is(err, gorm.ErrRecordNotFound) {
+            return nil, nil
+        }
+        return nil, err
+    }
+    return &license, nil
+}
+
+func (r *repository) GetActiveLicenseByOrganization(ctx context.Context, orgID uuid.UUID) (*models.License, error) {
+    var license models.License
+    if err := r.db.WithContext(ctx).
+        Where("organization_id = ? AND status = ? AND expires_at > ?", orgID, "active", time.Now()).
+        First(&license).Error; err != nil {
+        if errors.Is(err, gorm.ErrRecordNotFound) {
+            return nil, nil
+        }
+        return nil, err
+    }
+    return &license, nil
+}
+
+func (r *repository) UpdateLicense(ctx context.Context, license *models.License) error {
+    return r.db.WithContext(ctx).Save(license).Error
+}
+
+func (r *repository) GetExpiredLicenses(ctx context.Context) ([]models.License, error) {
+    var licenses []models.License
+    if err := r.db.WithContext(ctx).
+        Where("status = ? AND expires_at <= ?", "active", time.Now()).
+        Find(&licenses).Error; err != nil {
+        return nil, err
+    }
+    return licenses, nil
+}
+
+func (r *repository) DeactivateOrganizationLicenses(ctx context.Context, orgID uuid.UUID) error {
+    return r.db.WithContext(ctx).
+        Model(&models.License{}).
+        Where("organization_id = ? AND status = ?", orgID, "active").
+        Updates(map[string]interface{}{
+            "status": "inactive",
+            "updated_at": time.Now(),
+        }).Error
 }

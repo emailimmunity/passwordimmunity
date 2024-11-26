@@ -22,6 +22,15 @@ An enterprise-grade password management system based on Vaultwarden with extende
 - Advanced audit logging
 - API access for enterprise automation
 
+### Payment and Licensing
+- Flexible payment processing with Mollie integration
+- Enterprise license management
+- Automated payment notifications
+- License status monitoring
+- Secure payment processing
+- Multiple subscription periods
+- Automated license activation/deactivation
+
 ## Directory Structure
 
 ```
@@ -30,10 +39,14 @@ passwordimmunity/
 │   ├── api/               # API endpoints
 │   ├── auth/              # Authentication providers
 │   ├── db/                # Database models and migrations
+│   ├── services/          # Core services
+│   │   ├── payment/       # Payment processing
+│   │   └── licensing/     # License management
 │   └── static/            # Static assets and templates
 ├── docs/                  # Documentation
 │   ├── installation/      # Installation guides
 │   ├── deployment/        # Deployment instructions
+│   ├── payment/          # Payment integration docs
 │   └── api/              # API documentation
 └── tests/                 # Test suites
 ```
