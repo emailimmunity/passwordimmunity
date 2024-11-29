@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Enterprise Features Management</title>
+    <link rel="stylesheet" href="/static/css/admin.css">
+</head>
+<body>
+    <div class="admin-container">
+        <h1>Enterprise Features Management</h1>
+
+        <div class="feature-list">
+            <h2>Active Features</h2>
+            <div id="activeFeatures" class="feature-grid">
+                <!-- Populated by JavaScript -->
+            </div>
+        </div>
+
+        <div class="feature-bundles">
+            <h2>Available Bundles</h2>
+            <div id="availableBundles" class="bundle-grid">
+                <!-- Populated by JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function loadFeatures() {
+            try {
+                const response = await fetch('/api/admin/enterprise/features');
+                const data = await response.json();
+
+                const featuresDiv = document.getElementById('activeFeatures');
+                featuresDiv.innerHTML = '';
+
+                data.features.forEach(feature => {
+                    const featureEl = document.createElement('div');
+                    featureEl.className = 'feature-card';
+                    featureEl.innerHTML = `
+                        <h3>${feature}</h3>
+                        <div class="feature-status">Active</div>
+                        <button onclick="checkFeatureStatus('${feature}')">Check Status</button>
+                    `;
+                    featuresDiv.appendChild(featureEl);
+                });
+            } catch (error) {
+                console.error('Failed to load features:', error);
+            }
+        }
+
+        async function checkFeatureStatus(featureId) {
+            try {
+                const response = await fetch(`/api/admin/enterprise/features/status?featureId=${featureId}`);
+                const data = await response.json();
+
+                alert(`Feature: ${data.featureId}\nStatus: ${data.isEnabled ? 'Enabled' : 'Disabled'}\n${data.expiresAt ? `Expires: ${data.expiresAt}` : ''}`);
+            } catch (error) {
+                console.error('Failed to check feature status:', error);
+            }
+        }
+
+        // Load features on page load
+        document.addEventListener('DOMContentLoaded', loadFeatures);
+    </script>
+</body>
+</html>
