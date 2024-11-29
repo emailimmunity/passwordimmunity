@@ -2,106 +2,69 @@ package payment
 
 import (
 	"context"
-	"fmt"
-	"time"
+	"errors"
 )
 
-type service struct {
-	client MollieClient
-	config *Config
+var (
+	ErrInvalidAmount      = errors.New("invalid payment amount")
+	ErrPaymentFailed      = errors.New("payment processing failed")
+	ErrVerificationFailed = errors.New("payment verification failed")
+	ErrFeatureActivation  = errors.New("feature activation failed")
+)
+
+// PaymentProvider defines the interface for payment processing
+type PaymentProvider interface {
+	CreatePayment(ctx context.Context, req PaymentRequest) (*PaymentResponse, error)
+	VerifyPayment(ctx context.Context, paymentID string) (*PaymentResponse, error)
+	HandleWebhook(payment *PaymentResponse) error
 }
 
-func NewService(config *Config) PaymentService {
-	return &service{
-		client: NewMollieClient(config),
-		config: config,
+// PaymentService manages payment processing and feature activation
+type PaymentService struct {
+	provider PaymentProvider
+}
+
+func NewPaymentService(provider PaymentProvider) *PaymentService {
+	return &PaymentService{
+		provider: provider,
 	}
 }
 
-func (s *service) CreatePayment(ctx context.Context, req *CreatePaymentRequest) (*Payment, error) {
-	if req.Currency == "" {
-		req.Currency = s.config.Currency
+// ProcessPayment handles the complete payment flow
+func (s *PaymentService) ProcessPayment(ctx context.Context, req PaymentRequest) (*PaymentResponse, error) {
+	// Validate request
+	if err := validatePaymentRequest(req); err != nil {
+		return nil, err
 	}
 
-	if req.WebhookURL == "" {
-		req.WebhookURL = fmt.Sprintf("%s%s", s.config.APIEndpoint, s.config.WebhookPath)
-	}
-
-	var payment *Payment
-	var err error
-
-	for attempt := 0; attempt <= s.config.RetryAttempts; attempt++ {
-		payment, err = s.client.CreatePayment(ctx, req)
-		if err == nil {
-			break
-		}
-
-		if attempt == s.config.RetryAttempts {
-			return nil, fmt.Errorf("failed to create payment after %d attempts: %w", s.config.RetryAttempts, err)
-		}
-
-		time.Sleep(s.config.RetryDelay)
+	// Create payment
+	payment, err := s.provider.CreatePayment(ctx, req)
+	if err != nil {
+		return nil, err
 	}
 
 	return payment, nil
 }
 
-func (s *service) GetPayment(ctx context.Context, paymentID string) (*Payment, error) {
-	var payment *Payment
-	var err error
-
-	for attempt := 0; attempt <= s.config.RetryAttempts; attempt++ {
-		payment, err = s.client.GetPayment(ctx, paymentID)
-		if err == nil {
-			break
-		}
-
-		if attempt == s.config.RetryAttempts {
-			return nil, fmt.Errorf("failed to get payment after %d attempts: %w", s.config.RetryAttempts, err)
-		}
-
-		time.Sleep(s.config.RetryDelay)
+// VerifyAndActivate verifies payment and activates features
+func (s *PaymentService) VerifyAndActivate(ctx context.Context, paymentID string) error {
+	// Verify payment
+	payment, err := s.provider.VerifyPayment(ctx, paymentID)
+	if err != nil {
+		return err
 	}
 
-	return payment, nil
-}
-
-func (s *service) CancelPayment(ctx context.Context, paymentID string) error {
-	var err error
-
-	for attempt := 0; attempt <= s.config.RetryAttempts; attempt++ {
-		err = s.client.CancelPayment(ctx, paymentID)
-		if err == nil {
-			break
-		}
-
-		if attempt == s.config.RetryAttempts {
-			return fmt.Errorf("failed to cancel payment after %d attempts: %w", s.config.RetryAttempts, err)
-		}
-
-		time.Sleep(s.config.RetryDelay)
+	// Handle webhook (activate features)
+	if err := s.provider.HandleWebhook(payment); err != nil {
+		return err
 	}
 
 	return nil
 }
 
-func (s *service) HandleWebhook(ctx context.Context, req *WebhookRequest) error {
-	payment, err := s.GetPayment(ctx, req.PaymentID)
-	if err != nil {
-		return fmt.Errorf("failed to get payment for webhook: %w", err)
+func validatePaymentRequest(req PaymentRequest) error {
+	if req.Amount.Value == "" || req.Amount.Currency == "" {
+		return ErrInvalidAmount
 	}
-
-	if payment.Status != req.Status {
-		return fmt.Errorf("payment status mismatch: expected %s, got %s", req.Status, payment.Status)
-	}
-
-	// TODO: Implement license activation/deactivation based on payment status
-	switch payment.Status {
-	case PaymentStatusPaid:
-		// Activate license
-	case PaymentStatusFailed, PaymentStatusCancelled, PaymentStatusExpired:
-		// Deactivate license
-	}
-
 	return nil
 }

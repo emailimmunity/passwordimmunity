@@ -3,138 +3,90 @@ package payment
 import (
 	"context"
 	"testing"
-	"time"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 )
 
-type mockMollieClient struct {
-	mock.Mock
+// MockPaymentProvider implements PaymentProvider for testing
+type MockPaymentProvider struct {
+	createPaymentFunc  func(ctx context.Context, req PaymentRequest) (*PaymentResponse, error)
+	verifyPaymentFunc  func(ctx context.Context, paymentID string) (*PaymentResponse, error)
+	handleWebhookFunc  func(payment *PaymentResponse) error
 }
 
-func (m *mockMollieClient) CreatePayment(ctx context.Context, req *CreatePaymentRequest) (*Payment, error) {
-	args := m.Called(ctx, req)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*Payment), args.Error(1)
+func (m *MockPaymentProvider) CreatePayment(ctx context.Context, req PaymentRequest) (*PaymentResponse, error) {
+	return m.createPaymentFunc(ctx, req)
 }
 
-func (m *mockMollieClient) GetPayment(ctx context.Context, paymentID string) (*Payment, error) {
-	args := m.Called(ctx, paymentID)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*Payment), args.Error(1)
+func (m *MockPaymentProvider) VerifyPayment(ctx context.Context, paymentID string) (*PaymentResponse, error) {
+	return m.verifyPaymentFunc(ctx, paymentID)
 }
 
-func (m *mockMollieClient) CancelPayment(ctx context.Context, paymentID string) error {
-	args := m.Called(ctx, paymentID)
-	return args.Error(0)
+func (m *MockPaymentProvider) HandleWebhook(payment *PaymentResponse) error {
+	return m.handleWebhookFunc(payment)
 }
 
-func TestCreatePayment(t *testing.T) {
-	mockClient := new(mockMollieClient)
-	config := &Config{
-		Currency:      "EUR",
-		RetryAttempts: 1,
-		RetryDelay:    time.Millisecond,
+func TestPaymentService_ProcessPayment(t *testing.T) {
+	mockProvider := &MockPaymentProvider{
+		createPaymentFunc: func(ctx context.Context, req PaymentRequest) (*PaymentResponse, error) {
+			return &PaymentResponse{
+				ID:     "test_payment",
+				Status: "pending",
+			}, nil
+		},
 	}
 
-	service := &service{
-		client: mockClient,
-		config: config,
+	service := NewPaymentService(mockProvider)
+
+	tests := []struct {
+		name    string
+		req     PaymentRequest
+		wantErr bool
+	}{
+		{
+			name: "valid request",
+			req: PaymentRequest{
+				Amount: Amount{
+					Currency: "EUR",
+					Value:    "10.00",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid amount",
+			req: PaymentRequest{
+				Amount: Amount{},
+			},
+			wantErr: true,
+		},
 	}
 
-	ctx := context.Background()
-	req := &CreatePaymentRequest{
-		Amount:      "10.00",
-		Description: "Test payment",
-		OrderID:     "order_123",
-		CustomerID:  "customer_123",
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := service.ProcessPayment(context.Background(), tt.req)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ProcessPayment() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
 	}
-
-	expectedPayment := &Payment{
-		ID:          "payment_123",
-		Status:      PaymentStatusPending,
-		Amount:      "10.00",
-		Currency:    "EUR",
-		Description: "Test payment",
-		OrderID:     "order_123",
-		CustomerID:  "customer_123",
-		CreatedAt:   time.Now(),
-	}
-
-	mockClient.On("CreatePayment", ctx, req).Return(expectedPayment, nil)
-
-	payment, err := service.CreatePayment(ctx, req)
-
-	assert.NoError(t, err)
-	assert.Equal(t, expectedPayment, payment)
-	mockClient.AssertExpectations(t)
 }
 
-func TestGetPayment(t *testing.T) {
-	mockClient := new(mockMollieClient)
-	config := &Config{
-		RetryAttempts: 1,
-		RetryDelay:    time.Millisecond,
+func TestPaymentService_VerifyAndActivate(t *testing.T) {
+	mockProvider := &MockPaymentProvider{
+		verifyPaymentFunc: func(ctx context.Context, paymentID string) (*PaymentResponse, error) {
+			return &PaymentResponse{
+				ID:     paymentID,
+				Status: "paid",
+			}, nil
+		},
+		handleWebhookFunc: func(payment *PaymentResponse) error {
+			return nil
+		},
 	}
 
-	service := &service{
-		client: mockClient,
-		config: config,
+	service := NewPaymentService(mockProvider)
+
+	err := service.VerifyAndActivate(context.Background(), "test_payment")
+	if err != nil {
+		t.Errorf("VerifyAndActivate() error = %v", err)
 	}
-
-	ctx := context.Background()
-	paymentID := "payment_123"
-
-	expectedPayment := &Payment{
-		ID:          paymentID,
-		Status:      PaymentStatusPaid,
-		Amount:      "10.00",
-		Currency:    "EUR",
-		Description: "Test payment",
-		CreatedAt:   time.Now(),
-	}
-
-	mockClient.On("GetPayment", ctx, paymentID).Return(expectedPayment, nil)
-
-	payment, err := service.GetPayment(ctx, paymentID)
-
-	assert.NoError(t, err)
-	assert.Equal(t, expectedPayment, payment)
-	mockClient.AssertExpectations(t)
-}
-
-func TestHandleWebhook(t *testing.T) {
-	mockClient := new(mockMollieClient)
-	config := &Config{
-		RetryAttempts: 1,
-		RetryDelay:    time.Millisecond,
-	}
-
-	service := &service{
-		client: mockClient,
-		config: config,
-	}
-
-	ctx := context.Background()
-	webhookReq := &WebhookRequest{
-		PaymentID: "payment_123",
-		Status:    PaymentStatusPaid,
-	}
-
-	payment := &Payment{
-		ID:     webhookReq.PaymentID,
-		Status: webhookReq.Status,
-	}
-
-	mockClient.On("GetPayment", ctx, webhookReq.PaymentID).Return(payment, nil)
-
-	err := service.HandleWebhook(ctx, webhookReq)
-
-	assert.NoError(t, err)
-	mockClient.AssertExpectations(t)
 }
